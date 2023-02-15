@@ -1,11 +1,23 @@
 [package]
 name = "serde_extra"
+authors = ["Alex Andreba <aandrebafreelancer@gmail.com>"]
+description = "Various de/serialization methods"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+keywords = ["serde", "time"]
+categories = ["rust-patterns"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+defaults = ["use_128"]
+use_128 = []
 
 [dependencies]
 cfg-if = "1.0.0"
 docfg = "0.1.0"
 serde = "1.0.152"
+
+[dev-dependencies]
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = "1.0.93"
