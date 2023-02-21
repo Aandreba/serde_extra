@@ -2,11 +2,12 @@
 name = "serde_extra"
 authors = ["Alex Andreba <aandrebafreelancer@gmail.com>"]
 description = "Various de/serialization methods"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
 keywords = ["serde", "time"]
 categories = ["rust-patterns"]
+repository = "https://github.com/Aandreba/serde_extra"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
