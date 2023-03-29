@@ -6,7 +6,7 @@ macro_rules! impl_u128 {
         }
     )+) => {
         $(
-            #[doc = concat!("Serialzies and deserialzies durations and time marks into ", $name)]
+            #[doc = concat!("Serialzies and deserialzies durations and time marks from/into ", $name)]
             pub mod $mod {
                 use serde::{*, de::Visitor};
                 use std::time::{Duration, SystemTime};
@@ -21,6 +21,72 @@ macro_rules! impl_u128 {
                     fn deserialize<D>(deser: D) -> Result<Self, D::Error>
                     where
                         D: Deserializer<'de>;
+                }
+
+                /// Serializer/Deserializer for [`Option`]s
+                pub mod option {
+                    use std::marker::PhantomData;
+                    use super::{$ser, $de};
+                    use serde::{de::Visitor, *};
+
+                    #[inline]
+                    pub fn serialize<T: $ser, S>(this: &Option<T>, ser: S) -> Result<S::Ok, S::Error>
+                    where
+                        S: Serializer,
+                    {
+                        #[repr(transparent)]
+                        struct Wrapper<'a, T>(&'a T);
+
+                        impl<T: $ser> Serialize for Wrapper<'_, T> {
+                            #[inline]
+                            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                            where
+                                S: Serializer,
+                            {
+                                T::serialize(self.0, serializer)
+                            }
+                        }
+
+                        match this {
+                            Some(this) => ser.serialize_some(&Wrapper(this)),
+                            None => ser.serialize_none(),
+                        }
+                    }
+
+                    #[inline]
+                    pub fn deserialize<'de, T: $de<'de>, D>(deser: D) -> Result<Option<T>, D::Error>
+                    where
+                        D: Deserializer<'de>,
+                    {
+                        struct LocalVisitor<T>(PhantomData<T>);
+
+                        impl<'de, T: $de<'de>> Visitor<'de> for LocalVisitor<T> {
+                            type Value = Option<T>;
+
+                            #[inline]
+                            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                                write!(formatter, concat!("a ", $name, " timestamp or null"))
+                            }
+
+                            #[inline]
+                            fn visit_none<E>(self) -> Result<Self::Value, E>
+                            where
+                                E: de::Error,
+                            {
+                                return Ok(None);
+                            }
+
+                            #[inline]
+                            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+                            where
+                                D: Deserializer<'de>,
+                            {
+                                return T::deserialize(deserializer).map(Some);
+                            }
+                        }
+
+                        return deser.deserialize_any(LocalVisitor(PhantomData));
+                    }
                 }
 
                 impl $ser for SystemTime {
@@ -158,7 +224,7 @@ impl_u128! {
 
 #[doc = "Serialzies and deserialzies durations and time marks into seconds"]
 pub mod ts_secs {
-    use serde::{*, de::Visitor};
+    use serde::{de::Visitor, *};
     use std::time::{Duration, SystemTime};
 
     pub trait SerializeSecs {
@@ -171,6 +237,72 @@ pub mod ts_secs {
         fn deserialize<D>(deser: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>;
+    }
+
+    /// Serializer/Deserializer for [`Option`]s
+    pub mod option {
+        use super::{DeserializeSecs, SerializeSecs};
+        use serde::{de::Visitor, *};
+        use std::marker::PhantomData;
+
+        #[inline]
+        pub fn serialize<T: SerializeSecs, S>(this: &Option<T>, ser: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            #[repr(transparent)]
+            struct Wrapper<'a, T>(&'a T);
+
+            impl<T: SerializeSecs> Serialize for Wrapper<'_, T> {
+                #[inline]
+                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: Serializer,
+                {
+                    T::serialize(self.0, serializer)
+                }
+            }
+
+            match this {
+                Some(this) => ser.serialize_some(&Wrapper(this)),
+                None => ser.serialize_none(),
+            }
+        }
+
+        #[inline]
+        pub fn deserialize<'de, T: DeserializeSecs<'de>, D>(deser: D) -> Result<Option<T>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct LocalVisitor<T>(PhantomData<T>);
+
+            impl<'de, T: DeserializeSecs<'de>> Visitor<'de> for LocalVisitor<T> {
+                type Value = Option<T>;
+
+                #[inline]
+                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    write!(formatter, concat!("a ", "second", " timestamp or null"))
+                }
+
+                #[inline]
+                fn visit_none<E>(self) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    return Ok(None);
+                }
+
+                #[inline]
+                fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+                where
+                    D: Deserializer<'de>,
+                {
+                    return T::deserialize(deserializer).map(Some);
+                }
+            }
+
+            return deser.deserialize_any(LocalVisitor(PhantomData));
+        }
     }
 
     impl SerializeSecs for SystemTime {
@@ -194,8 +326,11 @@ pub mod ts_secs {
         where
             D: Deserializer<'de>,
         {
-            SystemTime::UNIX_EPOCH.checked_add(<Duration as DeserializeSecs::<'de>>::deserialize(deser)?)
-                .ok_or_else(|| serde::de::Error::custom("overflow when adding duration to system time"))
+            SystemTime::UNIX_EPOCH
+                .checked_add(<Duration as DeserializeSecs<'de>>::deserialize(deser)?)
+                .ok_or_else(|| {
+                    serde::de::Error::custom("overflow when adding duration to system time")
+                })
         }
     }
 
@@ -225,18 +360,27 @@ pub mod ts_secs {
                 }
 
                 #[inline]
-                fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> where E: de::Error, {
-                    return Ok(Duration::from_secs(v))
+                fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    return Ok(Duration::from_secs(v));
                 }
 
                 #[inline]
-                fn visit_f32<E>(self, v: f32) -> Result<Self::Value, E> where E: de::Error, {
-                    return Duration::try_from_secs_f32(v).map_err(serde::de::Error::custom)
+                fn visit_f32<E>(self, v: f32) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    return Duration::try_from_secs_f32(v).map_err(serde::de::Error::custom);
                 }
 
                 #[inline]
-                fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E> where E: de::Error, {
-                    return Duration::try_from_secs_f64(v).map_err(serde::de::Error::custom)
+                fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+                where
+                    E: de::Error,
+                {
+                    return Duration::try_from_secs_f64(v).map_err(serde::de::Error::custom);
                 }
             }
 
