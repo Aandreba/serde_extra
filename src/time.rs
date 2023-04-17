@@ -85,7 +85,7 @@ macro_rules! impl_u128 {
                             }
                         }
 
-                        return deser.deserialize_any(LocalVisitor(PhantomData));
+                        return deser.deserialize_option(LocalVisitor(PhantomData));
                     }
                 }
 
@@ -301,7 +301,7 @@ pub mod ts_secs {
                 }
             }
 
-            return deser.deserialize_any(LocalVisitor(PhantomData));
+            return deser.deserialize_option(LocalVisitor(PhantomData));
         }
     }
 
